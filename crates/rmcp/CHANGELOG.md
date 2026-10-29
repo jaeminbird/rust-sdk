@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-v3.8.0...rmcp-v3.9.0) - 2026-10-29
+
+### Added
+
+- support the Skills extension (SEP-2640) ([#1392](https://github.com/modelcontextprotocol/rust-sdk/pull/1392))
+
+### Fixed
+
+- *(model)* accept URL elicitation requests without elicitationId ([#1383](https://github.com/modelcontextprotocol/rust-sdk/pull/1383))
+- *(transport)* preserve protocol error replies across cancellation ([#1370](https://github.com/modelcontextprotocol/rust-sdk/pull/1370))
+
+### Other
+
+- add Voltip to built with rmcp list ([#1401](https://github.com/modelcontextprotocol/rust-sdk/pull/1401))
+
 ## [3.8.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-v3.7.0...rmcp-v3.8.0) - 2026-10-23
 
 ### Added
