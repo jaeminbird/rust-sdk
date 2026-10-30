@@ -293,6 +293,29 @@ async fn stateful_rejected_initial_posts_do_not_create_sessions() -> anyhow::Res
     Ok(())
 }
 
+/// DELETE names a session like any other request, so once the server no longer
+/// knows it (never created, or already terminated) the answer is 404, not 202.
+#[tokio::test]
+async fn stateful_delete_of_unknown_or_terminated_session_is_not_found() -> anyhow::Result<()> {
+    let (client, url, ct) = spawn_server(stateful_config()).await;
+    let delete = |session_id: String| {
+        client
+            .delete(&url)
+            .header("Mcp-Session-Id", session_id)
+            .send()
+    };
+
+    assert_eq!(delete("no-such-session".into()).await?.status(), 404);
+
+    let initialize = post_init(&client, &url, None, "2025-11-25").await;
+    let session_id = initialize.headers()["Mcp-Session-Id"].to_str()?.to_owned();
+    assert_eq!(delete(session_id.clone()).await?.status(), 202);
+    assert_eq!(delete(session_id).await?.status(), 404);
+
+    ct.cancel();
+    Ok(())
+}
+
 /// The `initialize` handshake exists only in the revisions before `2026-07-28`,
 /// so naming a later version in it does not make the request a modern one: the
 /// server keeps legacy semantics, opens a session, and answers with a version it

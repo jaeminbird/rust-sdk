@@ -457,3 +457,75 @@ async fn test_no_session_created_at_latest_protocol_version() -> anyhow::Result<
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Test — DELETE reaches a session that only the shared store still holds
+//
+//   Instance A   creates the session, then shuts down
+//   Instance B   (fresh) receives the DELETE: the session is still known through
+//                the store, so it answers 202 and removes the entry; a second
+//                DELETE for the same ID is 404.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_delete_of_session_held_only_by_store() -> anyhow::Result<()> {
+    let http = reqwest::Client::new();
+    let store = Arc::new(InMemorySessionStore::new());
+
+    let ct_a = CancellationToken::new();
+    let (addr_a, srv_a) = spawn_server(
+        Some(store.clone()),
+        Arc::new(LocalSessionManager::default()),
+        &ct_a,
+    );
+    let init_resp = http
+        .post(format!("http://{addr_a}/mcp"))
+        .header("accept", "application/json, text/event-stream")
+        .header("content-type", "application/json")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#)
+        .send()
+        .await?;
+    let session_id = init_resp.headers()["mcp-session-id"].to_str()?.to_owned();
+    let _ = init_resp.bytes().await?;
+    let initialized = http
+        .post(format!("http://{addr_a}/mcp"))
+        .header("accept", "application/json, text/event-stream")
+        .header("content-type", "application/json")
+        .header("mcp-session-id", &session_id)
+        .body(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+        .send()
+        .await?;
+    assert_eq!(initialized.status(), 202);
+    for _ in 0..50 {
+        if store.len().await == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        store.len().await,
+        1,
+        "instance A should persist the session"
+    );
+    ct_a.cancel();
+    srv_a.await?;
+
+    let ct_b = CancellationToken::new();
+    let (addr_b, srv_b) = spawn_server(
+        Some(store.clone()),
+        Arc::new(LocalSessionManager::default()),
+        &ct_b,
+    );
+    let delete = || {
+        http.delete(format!("http://{addr_b}/mcp"))
+            .header("mcp-session-id", &session_id)
+            .send()
+    };
+    assert_eq!(delete().await?.status(), 202);
+    assert_eq!(store.len().await, 0, "DELETE should remove the store entry");
+    assert_eq!(delete().await?.status(), reqwest::StatusCode::NOT_FOUND);
+
+    ct_b.cancel();
+    srv_b.await?;
+    Ok(())
+}

@@ -194,3 +194,37 @@ async fn http_401_json_rpc_error_body_without_challenge_keeps_status() {
 async fn http_403_json_rpc_error_body_without_challenge_keeps_status() {
     post_ping_expecting_status_error(403, "HTTP 403 Forbidden").await;
 }
+
+async fn delete_session_against(status: u16) -> Result<(), String> {
+    use axum::{Router, http::StatusCode, routing::delete};
+
+    let router = Router::new().route(
+        "/mcp",
+        delete(move || async move { StatusCode::from_u16(status).unwrap() }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    reqwest::Client::new()
+        .delete_session(
+            Arc::from(format!("http://{addr}/mcp").as_str()),
+            Arc::from("gone-session"),
+            None,
+            HashMap::new(),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// A server that already terminated the session answers DELETE with 404, the
+/// spec's reply for an unknown session. That is the state DELETE asks for, so
+/// it is not an error; other failures still are.
+#[tokio::test]
+async fn delete_session_treats_404_as_already_terminated() {
+    assert_eq!(delete_session_against(404).await, Ok(()));
+    assert_eq!(delete_session_against(405).await, Ok(()));
+    assert!(delete_session_against(500).await.is_err());
+}

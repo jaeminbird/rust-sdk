@@ -183,6 +183,12 @@ impl StreamableHttpClient for reqwest::Client {
             tracing::debug!("this server doesn't support deleting session");
             return Ok(());
         }
+        // 404 means the server no longer knows the session (it expired or was
+        // already terminated), which is the state DELETE asks for.
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            tracing::debug!("session was already terminated on the server");
+            return Ok(());
+        }
         let _response = response.error_for_status()?;
         Ok(())
     }

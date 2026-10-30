@@ -2371,6 +2371,24 @@ where
         };
         // Validate MCP-Protocol-Version header (per 2025-06-18 spec)
         validate_protocol_version_header(request.headers(), false)?;
+        let has_session = self
+            .session_manager
+            .has_session(&session_id)
+            .await
+            .map_err(internal_error_response("check session"))?;
+        // A session held only by the external store (another instance, or before
+        // a restart) is still known; a store error is not proof it is gone.
+        let in_store = match (&self.config.session_store, has_session) {
+            (Some(store), false) => !matches!(store.load(session_id.as_ref()).await, Ok(None)),
+            _ => false,
+        };
+        if !has_session && !in_store {
+            // MCP spec: server MUST respond with 404 Not Found for terminated/unknown sessions
+            return Ok(Response::builder()
+                .status(http::StatusCode::NOT_FOUND)
+                .body(Full::new(Bytes::from("Not Found: Session not found")).boxed())
+                .expect("valid response"));
+        }
         // close session
         self.session_manager
             .close_session(&session_id)
