@@ -1226,6 +1226,50 @@ impl<'de> Deserialize<'de> for ElicitationSchema {
     }
 }
 
+/// `Option<T>` fields come out of schemars as nullable schemas: `null` added to
+/// `enum`, or an `anyOf` of the inner schema and a `{"const": null}` branch.
+/// Elicitation primitives have no null form (optionality is expressed by
+/// leaving the field out of `required`), so unwrap these back to the inner
+/// schema. Otherwise an optional enum loses its choices or fails to convert.
+#[cfg(feature = "schemars")]
+fn strip_optional_nulls(schema: &mut crate::model::JsonObject) {
+    use serde_json::Value;
+
+    fn is_null_branch(branch: &Value) -> bool {
+        match branch {
+            Value::Object(b) => {
+                b.get("const") == Some(&Value::Null)
+                    || b.get("type") == Some(&Value::String("null".into()))
+                    || b.get("enum") == Some(&Value::Array(vec![Value::Null]))
+            }
+            _ => false,
+        }
+    }
+
+    let Some(Value::Object(properties)) = schema.get_mut("properties") else {
+        return;
+    };
+    for property in properties.values_mut() {
+        let Value::Object(property) = property else {
+            continue;
+        };
+        if let Some(Value::Array(branches)) = property.get("anyOf") {
+            let mut rest = branches.iter().filter(|b| !is_null_branch(b));
+            if let (Some(Value::Object(inner)), None) = (rest.next(), rest.next()) {
+                let inner = inner.clone();
+                property.remove("anyOf");
+                for (key, value) in inner {
+                    property.entry(key).or_insert(value);
+                }
+            }
+        }
+        if let Some(Value::Array(values)) = property.get_mut("enum") {
+            values.retain(|v| !v.is_null());
+        }
+        property.remove("nullable");
+    }
+}
+
 impl ElicitationSchema {
     /// Create a new elicitation schema with the given properties
     pub fn new(properties: BTreeMap<String, PrimitiveSchemaDefinition>) -> Self {
@@ -1301,7 +1345,10 @@ impl ElicitationSchema {
         let schema = generator.into_root_schema_for::<T>();
         let object = serde_json::to_value(schema).expect("failed to serialize schema");
         match object {
-            serde_json::Value::Object(object) => Self::from_json_schema(object),
+            serde_json::Value::Object(mut object) => {
+                strip_optional_nulls(&mut object);
+                Self::from_json_schema(object)
+            }
             _ => panic!(
                 "Schema serialization produced non-object value: expected JSON object but got {:?}",
                 object
@@ -2390,6 +2437,38 @@ mod tests {
                     }
                 })
             );
+            Ok(())
+        }
+        #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+        struct OptionalChoices {
+            plain: Option<UntitledEnum>,
+            titled: Option<TitledEnum>,
+            note: Option<String>,
+            count: Option<i32>,
+        }
+
+        #[test]
+        fn test_schema_inference_for_optional_enum_fields() -> Result<()> {
+            let schema = ElicitationSchema::from_type::<OptionalChoices>()?;
+            let json = serde_json::to_value(&schema)?;
+            assert!(json.get("required").is_none());
+            let properties = &json["properties"];
+            assert_eq!(
+                properties["plain"],
+                json!({"type": "string", "enum": ["First", "Second", "Third"]})
+            );
+            assert_eq!(
+                properties["titled"],
+                json!({
+                    "type": "string",
+                    "oneOf": [
+                        {"const": "FirstValue", "title": "Title for the first value"},
+                        {"const": "SecondValue", "title": "Title for the second value"}
+                    ]
+                })
+            );
+            assert_eq!(properties["note"], json!({"type": "string"}));
+            assert_eq!(properties["count"]["type"], "integer");
             Ok(())
         }
     }
