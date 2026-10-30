@@ -78,12 +78,13 @@ Json Schema generation (version 2020-12):
 <summary>Start a client</summary>
 
 ```rust, ignore
-use rmcp::{ServiceExt, transport::{TokioChildProcess, ConfigureCommandExt}};
-use tokio::process::Command;
+use rmcp::{ServiceExt, transport::{TokioChildProcess, ConfigureCommandExt, which_command}};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = ().serve(TokioChildProcess::new(Command::new("npx").configure(|cmd| {
+    // `which_command` (feature `which-command`) resolves `npx` on every platform;
+    // on Windows it is `npx.cmd`, which `Command::new("npx")` cannot find.
+    let client = ().serve(TokioChildProcess::new(which_command("npx")?.configure(|cmd| {
         cmd.arg("-y").arg("@modelcontextprotocol/server-everything");
     }))?).await?;
     Ok(())

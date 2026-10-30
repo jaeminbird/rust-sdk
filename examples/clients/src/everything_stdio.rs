@@ -3,9 +3,8 @@ use rmcp::{
     ServiceExt,
     model::{CallToolRequestParams, GetPromptRequestParams, ReadResourceRequestParams},
     object,
-    transport::{ConfigureCommandExt, TokioChildProcess},
+    transport::{ConfigureCommandExt, TokioChildProcess, which_command},
 };
-use tokio::process::Command;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -20,7 +19,7 @@ async fn main() -> Result<()> {
         .init();
 
     let client = ()
-        .serve(TokioChildProcess::new(Command::new("npx").configure(
+        .serve(TokioChildProcess::new(which_command("npx")?.configure(
             |cmd| {
                 cmd.arg("-y").arg("@modelcontextprotocol/server-everything");
             },
@@ -44,14 +43,14 @@ async fn main() -> Result<()> {
         .await?;
     tracing::info!("Tool result for echo: {tool_result:#?}");
 
-    // Call tool longRunningOperation
+    // Call tool trigger-long-running-operation
     let tool_result = client
         .call_tool(
-            CallToolRequestParams::new("longRunningOperation")
+            CallToolRequestParams::new("trigger-long-running-operation")
                 .with_arguments(object!({ "duration": 3, "steps": 1 })),
         )
         .await?;
-    tracing::info!("Tool result for longRunningOperation: {tool_result:#?}");
+    tracing::info!("Tool result for trigger-long-running-operation: {tool_result:#?}");
 
     // List resources
     let resources = client.list_all_resources().await?;
