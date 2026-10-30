@@ -591,8 +591,10 @@ impl<C: StreamableHttpClient> SseStreamReconnect for StreamableHttpClientReconne
 
     fn classify_reconnect_error(&self, error: &Self::Error) -> ReconnectErrorDisposition {
         match error {
-            // Repeating GET cannot enable SSE or repair the cloned credentials.
+            // Repeating GET cannot enable SSE, repair the cloned credentials,
+            // or bring back a session the server no longer knows (404).
             StreamableHttpError::ServerDoesNotSupportSse
+            | StreamableHttpError::SessionExpired
             | StreamableHttpError::AuthRequired(_)
             | StreamableHttpError::InsufficientScope(_) => ReconnectErrorDisposition::Terminate,
             _ => ReconnectErrorDisposition::Retry,

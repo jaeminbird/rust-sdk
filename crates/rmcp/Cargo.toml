@@ -299,6 +299,11 @@ required-features = ["server", "client", "macros"]
 path = "tests/test_task.rs"
 
 [[test]]
+name = "test_streamable_http_resume_session_expired"
+required-features = ["client", "transport-streamable-http-client-reqwest"]
+path = "tests/test_streamable_http_resume_session_expired.rs"
+
+[[test]]
 name = "test_streamable_http_priming"
 required-features = ["server", "client", "transport-streamable-http-server", "reqwest"]
 path = "tests/test_streamable_http_priming.rs"

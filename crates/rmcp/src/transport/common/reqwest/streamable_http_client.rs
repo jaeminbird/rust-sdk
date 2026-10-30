@@ -96,6 +96,7 @@ impl StreamableHttpClient for reqwest::Client {
         let mut request_builder = self
             .get(uri.as_ref())
             .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "));
+        let session_was_attached = session_id.is_some();
         if let Some(session_id) = session_id {
             request_builder = request_builder.header(HEADER_SESSION_ID, session_id.as_ref());
         }
@@ -140,6 +141,9 @@ impl StreamableHttpClient for reqwest::Client {
                     required_scope: scope,
                 },
             ));
+        }
+        if response.status() == reqwest::StatusCode::NOT_FOUND && session_was_attached {
+            return Err(StreamableHttpError::SessionExpired);
         }
         if let Some(error) = http_status_error(response.status(), response.headers()) {
             return Err(error.into());
